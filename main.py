@@ -19,7 +19,10 @@ async def on_message(message):
 
     # Help command
     if message.content.startswith('apod:help'):
-        await message.channel.send('Test')
+        await message.channel.send('Commands:\n'
+                                   'apod:help - Show this help message\n'
+                                   'apod:today - Get today\'s Astronomy Picture of the Day\n'
+                                   'apod:latest - Get the latest Astronomy Picture of the Day')
 
     # Today's APOD command
     if message.content.startswith('apod:today'):
