@@ -11,6 +11,7 @@ client = discord.Client(intents=intents)
 @client.event
 async def on_ready():
     print(f'Logged in as {client.user}')
+    await client.change_presence(activity=discord.Game(name="apod:help for commands"))
 
 @client.event
 async def on_message(message):
