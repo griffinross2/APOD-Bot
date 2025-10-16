@@ -24,7 +24,6 @@ def fetch_apod_url(url: str = ""):
     # Extract the image title from the HTML content (next bold tag after the image)
     title_start = response.text.lower().find('<b>', img_end)
     title_end = response.text.lower().find('</b>', title_start)
-    print(f"title_start: {title_start}, title_end: {title_end}")
     title = response.text[title_start + 3:title_end].strip() if title_start != -1 and title_end != -1 else "Astronomy Picture of the Day"
 
     print(f"Fetched APOD {url}: {img_url}")
