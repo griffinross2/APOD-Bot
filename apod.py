@@ -26,8 +26,13 @@ def fetch_apod_url(url: str = ""):
     title_end = response.text.lower().find('</b>', title_start)
     title = response.text[title_start + 3:title_end].strip() if title_start != -1 and title_end != -1 else "Astronomy Picture of the Day"
 
+    response = requests.get(img_url)
+    if response.status_code != 200:
+        print(f"Failed to retrieve image {img_url}: {response.status_code}")
+        return None
+
     print(f"Fetched APOD {url}: {img_url}")
-    return title, img_url
+    return url, title, response.content
 
 def fetch_apod_date(date: datetime = datetime.now()):
     date_str = date.strftime('%y%m%d') if date else datetime.now().strftime('%y%m%d')
