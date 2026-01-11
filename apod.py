@@ -2,8 +2,12 @@ import requests
 from datetime import datetime, timedelta
 
 def fetch_apod_url(url: str = ""):
-    response = requests.get(url)
-    
+    try:
+        response = requests.get(url)
+    except Exception as e:
+        print(f"Error fetching {url}: {e}")
+        return None
+
     # Check if the request was successful
     if response.status_code != 200:
         print(f"Failed to retrieve {url}: {response.status_code}")
@@ -58,7 +62,12 @@ def fetch_apod_url(url: str = ""):
         url = f"https://apod.nasa.gov/apod/ap{date_str}.html"
 
     if not is_video:
-        response = requests.get(content_url)
+        try:
+            response = requests.get(content_url)
+        except Exception as e:
+            print(f"Error fetching image/video {content_url}: {e}")
+            return None
+        
         if response.status_code != 200:
             print(f"Failed to retrieve image/video {content_url}: {response.status_code}")
             return None
