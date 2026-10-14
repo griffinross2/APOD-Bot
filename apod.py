@@ -1,83 +1,103 @@
+import re
+import traceback
+
 import requests
 from datetime import datetime, timedelta
 
-def fetch_apod_url(url: str = ""):
+def reformat_explanation(explanation):
+    # Adapted from https://gist.github.com/hqnna/e3c2e5e42eafe55d84e2ecc042b7f984 using Claude
+
+    substitutions = [
+        (r'<br\s*/?>', ''),
+        (r'</p>', ''),
+        (r'</div>', ''),
+        (r'</li>', ''),
+        (r'<li>', '- '),
+        (r'<ul[^>]*>', ''),
+        (r'</ul>', ''),
+        (r'<ol[^>]*>', ''),
+        (r'</ol>', ''),
+        (r'<h([1-6])[^>]*>(.*?)</h\1>', r'\n**\2**'),
+        (r'<strong>(.*?)</strong>', r'**\1**'),
+        (r'<b>(.*?)</b>', r'**\1**'),
+        (r'<em>(.*?)</em>', r'*\1*'),
+        (r'<i>(.*?)</i>', r'*\1*'),
+        (r'<u>(.*?)</u>', r'__\1__'),
+        (r'<code>(.*?)</code>', r'`\1`'),
+        (r'<a[^>]*href="([^"]*)"[^>]*>(.*?)</a>', r'[\2](\1)'),
+    ]
+
+    explanation_formatted = explanation
+    for pattern, replacement in substitutions:
+        explanation_formatted = re.sub(pattern, replacement, explanation_formatted, flags=re.I)
+
+    # <pre> blocks can span multiple lines
+    explanation_formatted = re.sub(r'<pre>(.*?)</pre>', r'```\1```', explanation_formatted, flags=re.I | re.S)
+
+    # Strip any remaining tags
+    explanation_formatted = re.sub(r'<[^>]+>', '', explanation_formatted)
+
+    # Decode HTML entities (&amp; last so it doesn't create new entities)
+    for entity, char in [('&nbsp;', ' '), ('&lt;', '<'), ('&gt;', '>'), ('&amp;', '&'), ('&quot;', '"'), ('&#39;', "'")]:
+        explanation_formatted = explanation_formatted.replace(entity, char)
+
+    return explanation_formatted.strip()
+
+def apod_api_req(api_key, date=None):
+    url = "https://science.nasa.gov/wp-json/wp/v2/apod-basic/"
+    
+    # Add date
+    if date is not None:
+        date_str = date.strftime('%y%m%d')
+        url += date_str
+
+    # API key
+        if type(api_key) is not str or len(api_key) == 0:
+            raise ValueError("Invalid API key")
+        else:
+            url += f"?api_key={api_key}"
+
+    # Make request
     try:
         response = requests.get(url)
-    except Exception as e:
-        print(f"Error fetching {url}: {e}")
+        response.raise_for_status()
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching APOD: {e}")
+
         return None
 
-    # Check if the request was successful
-    if response.status_code != 200:
-        print(f"Failed to retrieve {url}: {response.status_code}")
-        return None
-    
-    def get_image(response):
-        # Extract the image URL from the HTML content
-        img_start = response.text.lower().find('<img src="')
-        if img_start == -1:
-            print(f"No image start found at {url}")
-            return None, None
-        img_end = response.text.find('"', img_start + 10)
-        if img_end == -1:
-            print(f"Malformed image tag src at {url}")
-            return None, None
-        img_src = response.text[img_start + 10:img_end]
-        img_url = f"https://apod.nasa.gov/apod/{img_src}"
-        return img_url, img_end
-    
-    def get_video(response):
-        # Extract the video URL from the HTML content
-        vid_start = response.text.lower().find('<iframe')
-        if vid_start == -1:
-            print(f"No iframe start found at {url}")
-            return None, None
-        vid_url_start = response.text.find('src="', vid_start + 7)
-        if vid_url_start == -1:
-            print(f"No iframe src found at {url}")
-            return None, None
-        vid_end = response.text.find('"', vid_url_start + 5)
-        if vid_end == -1:
-            print(f"Malformed iframe tag src at {url}")
-            return None, None
-        vid_src = response.text[vid_url_start + 5:vid_end]
-        return vid_src, vid_end
+    respjson = response.json()
 
-    is_video = False
-    content_url, url_end = get_image(response)
-    if content_url is None:
-        content_url, url_end = get_video(response)
-        is_video = True
-        if content_url is None:
-            return None
+    # If the request is a list, pick the first element (latest)
+    if type(respjson) is list and len(respjson) > 0:
+        respjson = respjson[0]
+    elif type(respjson) is list:
+        raise ValueError("APOD API returned an empty list")
 
-    # Extract the image title from the HTML content (next bold tag after the image)
-    title_start = response.text.lower().find('<b>', url_end)
-    title_end = response.text.lower().find('</b>', title_start)
-    title = response.text[title_start + 3:title_end].strip() if title_start != -1 and title_end != -1 else "Astronomy Picture of the Day"
+    title = '[Missing title]'
+    link = '[Missing link]'
+    explanation = '[Missing explanation]'
+    hdurl = None
 
-    if url == "https://apod.nasa.gov/":
-        date_str = datetime.now().strftime('%y%m%d') if datetime.now() else datetime.now().strftime('%y%m%d')
-        url = f"https://apod.nasa.gov/apod/ap{date_str}.html"
+    if 'title' in respjson.keys():
+        title = respjson['title']
 
-    if not is_video:
-        try:
-            response = requests.get(content_url)
-        except Exception as e:
-            print(f"Error fetching image/video {content_url}: {e}")
-            return None
-        
-        if response.status_code != 200:
-            print(f"Failed to retrieve image/video {content_url}: {response.status_code}")
-            return None
-        print(f"Fetched APOD {url}: {content_url}")
+    if 'permalink' in respjson.keys():
+        link = respjson['permalink']
+    elif 'url' in respjson.keys():
+        link = respjson['url']
 
-        return False, url, title, response.content
-    else:
-        return True, url, title, content_url
+    if 'explanation' in respjson.keys():
+        explanation = reformat_explanation(respjson['explanation'])
+        if len(explanation) > 2000:
+            explanation = explanation[:1997] + "..."
 
-def fetch_apod_date(date: datetime = datetime.now()):
-    date_str = date.strftime('%y%m%d') if date else datetime.now().strftime('%y%m%d')
-    url = f"https://apod.nasa.gov/apod/ap{date_str}.html"
-    return fetch_apod_url(url)
+    if 'hdurl' in respjson.keys():
+        hdurl = respjson['hdurl']
+
+    return {
+        'title': title,
+        'explanation': explanation,
+        'link': link,
+        'hdurl': hdurl
+    }
